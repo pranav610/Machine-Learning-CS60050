@@ -1,16 +1,70 @@
 """
-    This file contains helper functions for Assignment-1-Q1
+    This file contains main function for Assignment-1-Q1
     Authors: Sidharth Vishwakarma (20CS10082)
              Kulkarni Pranav Suryakant (20CS30029)
 """
-
+from cgi import test
 from cmath import nan
-from re import L
+from fileinput import close
+from unicodedata import name
 import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from re import L
 import random
 import time
-import numpy as np
 from turtle import pen
+
+DATA_FILE = 'Dataset_A.csv'
+OUT_FILE = 'output.txt'
+TREE1_FILE = 'tree_before_pruning.txt'
+TREE2_FILE = 'tree_after_pruning.txt'
+
+def main():
+    """
+        This function is the main function for Assignment-1-Q1
+    """
+    f = open(OUT_FILE, 'w')
+    tree_file_1 = open(TREE1_FILE, 'w')
+    tree_file_2 = open(TREE2_FILE, 'w')
+
+    data = read_data(DATA_FILE)
+    print("---------- Data is loaded ----------", file=f)
+    data = fill_missing_values(data)
+    print("---------- Testing on 10 random splits ----------", file=f)
+    accuracy1, best_tree, max_accuracy, validation_data, test_data = test_10_random_splits(data,f=f)
+    print(f'Average Accuracy: {accuracy1}', file = f)
+    print(f'Maximum Accuracy: {max_accuracy}', file = f)
+    print("---------- Tree Before Pruning ----------", file=tree_file_1)
+    best_tree.print_tree(best_tree.root,0,tree_file_1)
+    best_tree.root.prune(best_tree, validation_data, max_accuracy)
+    print("---------- Tree After Pruning ----------", file=tree_file_2)
+    best_tree.print_tree(best_tree.root,0,tree_file_2)
+    print(f'Accuracy after pruning: {get_accuracy(test_data, best_tree)}', file = f)
+
+    f.close()
+    tree_file_1.close()
+    tree_file_2.close()
+
+    # depth vs accuracy plot
+    depth = np.arange(1, 11)
+    accuracy = []
+    for i in range(10):
+        _, _, max_accuracy, _, _ = test_10_random_splits(data, depth=i)
+        accuracy.append(max_accuracy)
+    plt.plot(depth, accuracy)
+    plt.xlabel('Depth')
+    plt.ylabel('Accuracy')
+    plt.title('Accuracy vs Depth')
+    for i,j in zip(depth,accuracy):
+        plt.annotate(str(round(j,2)),xy=(i,j))
+    
+    plt.savefig('accuracy_vs_depth.png')
+
+        
+
+if __name__ == "__main__":
+    main()
 
 def read_data(filename):
     """
@@ -78,10 +132,6 @@ def calc_info_gain(data, feature):
             info_gain: The information gain of the given feature
     """
 
-    # if(data[feature].isnull().values.any()):
-    #     label = data[feature].isnull()
-    #     data[feature][label] = data[feature].mode()[0]
-
     test_cases = data['Segmentation']
     info_gain = calc_entropy(test_cases)
 
@@ -93,20 +143,6 @@ def calc_info_gain(data, feature):
         test_cases = data['Segmentation'][label]
         info_gain -= (len(test_cases) / total) * calc_entropy(data['Segmentation'][label])
     return info_gain
-
-    # if(len(distinct) <=  10):
-    #     for value in data[feature].unique():
-    #         label = data[feature] == value
-    #         test_cases = data['Segmentation'][label]
-    #         info_gain -= (len(test_cases) / total) * calc_entropy(data['Segmentation'][label])
-    #     return info_gain
-    # else:
-    #     data_temp = pd.cut(data[feature], 10)
-    #     for value in data_temp.unique():
-    #         label = data_temp == value
-    #         test_cases = data['Segmentation'][label]
-    #         info_gain -= (len(test_cases) / total) * calc_entropy(data['Segmentation'][label])
-    #     return info_gain
 
 def best_attribute(data):
     """
@@ -136,13 +172,12 @@ def get_accuracy(test_data, tree):
             accuracy: The accuracy of the decision tree
     """
     correct = 0
-    # print(tree.root)
     for i in range(len(test_data)):
         if(tree.predict_segement(test_data.loc[i], tree.root) == test_data.iloc[i]['Segmentation']):
             correct += 1
     return correct / len(test_data)
 
-def test_10_random_splits(data, depth = 5, min_samples = 5):
+def test_10_random_splits(data, depth = 5, min_samples = 50, f = None):
     """
         This function tests the decision tree with 10 random train and test splits
 
@@ -165,6 +200,8 @@ def test_10_random_splits(data, depth = 5, min_samples = 5):
         tree = DecisionTree(depth, min_samples)
         tree.build_tree(train_data)
         val = get_accuracy(test_data, tree)
+        if (f):
+            print("Accuracy of split_{}:".format(i), val, file = f)
         accuracy += val
         if(val > max_accuracy):
             max_accuracy = val
@@ -191,20 +228,6 @@ class Node:
         self.classifcation = classifcation
         self.attribute_value = attribute_value
         self.childern = []
-    
-    # def print_tree(self):
-    #     """
-    #         This function creates string for a node 
-    #         String will display the attribute and classification of the node
-
-    #         Returns:
-    #             string: The string for the node
-    #     """
-        
-    #     if(self.is_leaf()):
-    #         return f'{self.attribute}\n{self.classifcation}'
-    #     else:
-    #         return f'Attribute: {self.attribute}'
     
     def is_leaf(self):
         """
@@ -285,27 +308,12 @@ class DecisionTree:
             Returns:
                 node: The root node of the decision tree
         """
-        
-        # setting the node to leaf node if the depth is greater than max_depth, 
-        # or the number of samples is less than min_samples, or the data is
-        # pure
-        # print("DEBUG")
-        # print(depth)
-        # print(self.max_depth)
-        # print(len(data))
-        # print(self.min_samples)
-        # print(len(data['Segmentation'].unique()))
-        
-        
+    
         # finding the attribute with the highest information gain
         best_attr, gain_value = best_attribute(data)
         
-
         if ((depth >= self.max_depth) or (len(data) <= self.min_samples) or (len(data['Segmentation'].unique()) == 1) or (gain_value == 0)):
             node = Node(classifcation=data['Segmentation'].mode()[0])
-            # print(node.classifcation)
-            # print(node)
-            # print("return from here1")
             return node
         
         new_node = Node(attribute=best_attr, classifcation=data['Segmentation'].mode()[0])
@@ -316,7 +324,6 @@ class DecisionTree:
             new_node.childern[-1].attribute_value = value
         
         self.depth = max(self.depth, depth)
-        # print("return from here2")
         self.root = new_node
         return new_node
     
@@ -335,13 +342,7 @@ class DecisionTree:
         if root.is_leaf():
             return root.classifcation
         else:
-            # for child in root.childern:
-            #     if data[root.attribute] == child.attribute:
-            #         return self.predict_segement(data, child)
             for child in root.childern:
-                # print("DEBUG2")
-                # print(training_example[root.attribute])
-                # print(child.attribute_value)
                 if training_example[root.attribute] == child.attribute_value:
                     return self.predict_segement(training_example, child)
 
